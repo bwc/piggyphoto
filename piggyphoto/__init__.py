@@ -1,6 +1,11 @@
 # piggyphoto.py
 # Copyright (C) 2010 Alex Dumitrache
 # Copyright (C) 2012, 2013 Marian Beermann
+# Copyright (C) 2014 Dieter Peer
+# Fixes included from:
+# - chunkerchunker see: https://github.com/YesVideo/piggyphoto/commit/f2c1b23de9b323ab5c0c4392e33fdc840492823e
+# - arjun810 see: https://github.com/rll/piggyphoto/commit/8d08543960bb65a9293448745ebe7778e46a892d#diff-777467d88991a3395cb058746d7c2081R146
+# In
 # Based on:
 # - a small code example by Mario Boikov, http://pysnippet.blogspot.com/2009/12/when-ctypes-comes-to-rescue.html
 # - libgphoto2 Python bindings by David PHAM-VAN <david@ab2r.com>
@@ -165,8 +170,14 @@ GP_OK = 0
 GP_CAPTURE_IMAGE = 0
 # CameraFileType enum in 'gphoto2-file.h'
 GP_FILE_TYPE_NORMAL = 1
-
-
+# CameraEventType enum in 'gphoto2-camera.h'
+# Fix from arjun810
+GP_EVENT_UNKNOWN = 0
+GP_EVENT_TIMEOUT = 1
+GP_EVENT_FILE_ADDED = 2
+GP_EVENT_FOLDER_ADDED = 3
+GP_EVENT_CAPTURE_COMPLETE = 4
+# Fix from arjun810 - END
 
 GP_WIDGET_WINDOW = 0  # Window widget This is the toplevel configuration widget. It should likely contain multiple GP_WIDGET_SECTION entries.
 GP_WIDGET_SECTION = 1 # Section widget (think Tab).
@@ -241,7 +252,8 @@ class Camera(object):
             ans = gp.gp_camera_init(self._cam, context)
             if ans == 0:
                 break
-            elif ans == -60:
+            #elif ans == -60: # Fix from chunkerchunker
+            elif (ans == -60 or ans == -53) and (unmount_cmd != None):
                 print("***", unmount_cmd)
                 os.system(unmount_cmd)
                 time.sleep(1)
@@ -330,7 +342,11 @@ class Camera(object):
 
     @property
     def port_info(self):
-        raise NotImplementedError
+        #raise NotImplementedError
+        infop = ctypes.POINTER(PortInfo)()
+        #gp.gp_camera_get_port_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.POINTER(PortInfo))]
+        _check_result(gp.gp_camera_get_port_info(self._cam, byref(infop)))
+        return infop.contents
 
     @port_info.setter
     def port_info(self, info):
@@ -359,7 +375,7 @@ class Camera(object):
         for i in range(1 + retries):
             ans = gp.gp_camera_capture_preview(self._cam, cfile._cf, context)
             if ans == 0: break
-            else: print("capture_preview(%s) retry #%d..." % (destpath, i))
+            #else: print("capture_preview(%s) retry #%d..." % (destpath, i))
         _check_result(ans)
 
         if destpath:
@@ -376,7 +392,23 @@ class Camera(object):
         _check_result(gp.gp_camera_trigger_capture(self._cam, context))
 
     def wait_for_event(self, timeout):
-        raise NotImplementedError
+        # Fix from arjun810
+        eventdata = ctypes.c_void_p()
+        event = ctypes.c_int(4)
+        timeout = ctypes.c_int(timeout)
+        check(gp.gp_camera_wait_for_event(self._cam, timeout, PTR(event), PTR(eventdata), context))
+        return (event.value, eventdata)
+        # Fix from arjun810 - END
+        
+    def wait_for_event_and_download(self, destpath, timeout=1000):
+        # Fix from arjun810
+        event = -1
+        while event != GP_EVENT_TIMEOUT:
+            event, data = self.wait_for_event(timeout)
+            if event == GP_EVENT_FILE_ADDED:
+                path = ctypes.cast(data, ctypes.POINTER(CameraFilePath)).contents
+                self.download_file(path.folder, path.name, destpath)
+        # Fix from arjun810 - END
 
     def list_folders(self, path = "/"):
         l = CameraList()
@@ -943,4 +975,5 @@ class CameraWidget(object):
 class CameraWidgetSimple(object):
     pass
 
+__version__ = "1.0.1"
 
