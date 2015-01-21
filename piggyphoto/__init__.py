@@ -396,7 +396,7 @@ class Camera(object):
         eventdata = ctypes.c_void_p()
         event = ctypes.c_int(4)
         timeout = ctypes.c_int(timeout)
-        check(gp.gp_camera_wait_for_event(self._cam, timeout, PTR(event), PTR(eventdata), context))
+        _check_result(gp.gp_camera_wait_for_event(self._cam, timeout, byref(event), byref(eventdata), context))
         return (event.value, eventdata)
         # Fix from arjun810 - END
         
@@ -481,7 +481,7 @@ class CameraFile(object):
     def to_pixbuf(self):
         mimetype = ctypes.c_char_p()
         gp.gp_file_get_mime_type(self._cf, ctypes.byref(mimetype))
-        print(ctypes.string_at(mimetype))
+        # print(ctypes.string_at(mimetype))
         
         """Returns data for GdkPixbuf.PixbufLoader.write()."""
         data = ctypes.c_char_p()
@@ -489,7 +489,7 @@ class CameraFile(object):
         gp.gp_file_get_data_and_size(self._cf, ctypes.byref(data),
                                      ctypes.byref(size))
                                      
-        print(size.value)
+        # print(size.value)
         return ctypes.string_at(data, size.value)
 
     def __dealoc__(self, filename):
